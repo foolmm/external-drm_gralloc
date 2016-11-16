@@ -28,10 +28,14 @@
 #include <stdarg.h>
 #include <pthread.h>
 #include <errno.h>
+#include <map>
 
 #include "drmhwcgralloc.h"
 #include "gralloc_drm.h"
 #include "gralloc_drm_priv.h"
+
+using namespace std;
+std::map<gralloc_drm_bo_t *, buffer_handle_t *> all_records;
 
 /*
  * Initialize the DRM device object
@@ -207,6 +211,12 @@ static int drm_mod_free_gpu0(alloc_device_t *dev, buffer_handle_t handle)
 
 	gralloc_drm_bo_decref(bo);
 
+	std::map<gralloc_drm_bo_t *,
+		buffer_handle_t *>::const_iterator it = all_records.find(bo);
+	if (it == all_records.end())
+		return -EINVAL;
+	all_records.erase(it);
+
 	return 0;
 }
 
@@ -230,12 +240,27 @@ static int drm_mod_alloc_gpu0(alloc_device_t *dev,
 	/* in pixels */
 	*stride /= bpp;
 
+	all_records.insert(std::make_pair(bo, handle));
+
 	return 0;
 }
 
 static void drm_mod_dump_gpu0(struct alloc_device_t *dev, char *buff, int buff_len)
 {
-	ALOGD("alloc_device_t dump not implemented yet");
+	int used = 0;
+
+	used += snprintf(buff+used, buff_len-used, "dump all buffer objects info:\n");
+
+	for( map<gralloc_drm_bo_t *, buffer_handle_t *>::iterator it=all_records.begin();
+			it!=all_records.end(); ++it) {
+		used += snprintf(buff+used, buff_len-used, "bo: %x, handle: %x, width: %d,"
+			" height: %d, format: %x, usage: %x\n", (*it).first, (*it).second,
+			(*it).first->handle->width, (*it).first->handle->height,
+			(*it).first->handle->format, (*it).first->handle->usage);
+		if (used >= buff_len)
+			return;
+	}
+
 	return;
 }
 
